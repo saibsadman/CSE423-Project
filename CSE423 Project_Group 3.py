@@ -42,6 +42,58 @@ POISONOUS_FOOD_COLOR = (0.0, 0.0, 1.0)
 SHELL_COLOR = (1.0, 1.0, 0.0) 
 SCORE_COLOR = (1.0, 1.0, 1.0) 
 
+
+def is_within_bounds(x, y):
+    return 0 <= x < GRID_COLS and 0 <= y < GRID_ROWS #Check if coordinates are within game boundaries
+
+def is_position_occupied(x, y, exclude_list=None): # Check if a position is occupied by any game object
+    if exclude_list is None:
+        exclude_list = []
+    
+    # Check snake position
+    if {'x': x, 'y': y} in snake and snake not in exclude_list:
+        return True
+        
+    # Check food position
+    if food not in exclude_list and food['x'] == x and food['y'] == y:
+        return True
+        
+    # Check poisonous food
+    if poisonous_food and poisonous_food not in exclude_list and poisonous_food['x'] == x and poisonous_food['y'] == y:
+        return True
+        
+    # Check shell
+    if shell and shell not in exclude_list and shell['x'] == x and shell['y'] == y:
+        return True
+        
+    # Check portals
+    if first_portal and first_portal not in exclude_list and first_portal['x'] == x and first_portal['y'] == y:
+        return True
+    if second_portal and second_portal not in exclude_list and second_portal['x'] == x and second_portal['y'] == y:
+        return True
+        
+    # Check obstacles
+    for obstacle in obstacles:
+        if obstacle not in exclude_list and obstacle['x'] == x and obstacle['y'] == y:
+            return True
+            
+    return False
+
+def get_safe_position(margin=1, exclude_list=None):
+    max_attempts = 100
+    attempts = 0
+    
+    while attempts < max_attempts:
+        x = random.randint(margin, GRID_COLS - 1 - margin)
+        y = random.randint(margin, GRID_ROWS - 1 - margin)
+        
+        if not is_position_occupied(x, y, exclude_list):
+            return {'x': x, 'y': y}
+            
+        attempts += 1
+    
+    return get_safe_position(0, exclude_list) # # If no position found, try without margin
+
 # snake segment using gl_points
 def draw_segment(x, y, color):
     glColor3f(*color)
@@ -223,16 +275,29 @@ startup_messages = [
 #obstacle generation
 def generate_obstacles():
     global obstacles
-    obstacles = [{'x': random.randint(0, GRID_COLS - 1), 'y': random.randint(0, GRID_ROWS - 1)} for i in range(3)]
+    obstacles = []
+    for i in range(OBSTACLE_COUNT):
+        new_obstacle = get_safe_position()
+        obstacles.append(new_obstacle)
 
 # teleportation portals generation
 def portal_generation():
     global first_portal, second_portal, portal_running, timer_for_portal
-    first_portal = {'x': random.randint(0, GRID_COLS - 1), 'y': random.randint(0, GRID_ROWS - 1)}
-    second_portal = {'x': random.randint(0, GRID_COLS - 1), 'y': random.randint(0, GRID_ROWS - 1)}
+    
+    # Generate first portal
+    first_portal = get_safe_position()
+    
+    # Generate second portal ensuring it's not too close to the first
+    while True:
+        second_portal = get_safe_position()
+        # Ensure minimum distance between portals
+        dx = abs(second_portal['x'] - first_portal['x'])
+        dy = abs(second_portal['y'] - first_portal['y'])
+        if dx > 2 or dy > 2:  # Minimum separation of 2 grid cells
+            break
+    
     portal_running = True
     timer_for_portal = time.time()
-
 
 # Checking if the snake collides with any obstacles
 def check_obstacle_collision():
@@ -294,7 +359,7 @@ def display():
 def move_snake():
     global snake, food, poisonous_food, poisonous_food_timer, shell, shell_active, shell_timer
     global direction, game_over, score, food_count, poisonous_food_eaten, paused, startup_phase, speed
-    global first_portal, second_portal, portal_running  
+    global first_portal, second_portal, portal_running
 
     if game_over or paused or startup_phase:
         return
@@ -310,7 +375,7 @@ def move_snake():
         head['x'] += 1
 
     # Wall collision checking
-    if head['x'] < 0 or head['x'] >= GRID_COLS or head['y'] < 0 or head['y'] >= GRID_ROWS:
+    if not is_within_bounds(head['x'], head['y']):
         game_over = True
         first_portal = None
         second_portal = None
@@ -319,79 +384,78 @@ def move_snake():
         return
 
     # Check for self-collision
-    if head in snake:
+    if head in snake[1:]:  # Exclude current head position
         game_over = True
         first_portal = None
         second_portal = None
         portal_running = False
         print(f"Game Over! Final Score: {score}")
         return
-    
-    snake.insert(0, head) #snake moving by adding new head
 
-    # Check for food eating
+    snake.insert(0, head)
+
+    # Food collision
     if head['x'] == food['x'] and head['y'] == food['y']:
-        food['x'] = random.randint(0, GRID_COLS - 1)
-        food['y'] = random.randint(0, GRID_ROWS - 1)
+        food = get_safe_position() # # Generate new food in safe position
         score += 10
         food_count += 1
         generate_obstacles()
 
-        # Adjusting speed every 80 points
         if score % 80 == 0:
-            speed = max(50, speed - 100)  # Reduce time for moving the snake but not below 50ms
+            speed = max(50, speed - 100)
 
-
-        # Reset poisonous food whenever normal food is eaten
+        # Reset and potentially generate new poisonous food
         poisonous_food = None
         poisonous_food_timer = None
 
-        if food_count % 3 == 0: #generating poisonous food
-            poisonous_food = {'x': random.randint(0, GRID_COLS - 1), 'y': random.randint(0, GRID_ROWS - 1)}
+        if food_count % 3 == 0:
+            poisonous_food = get_safe_position()
             poisonous_food_timer = time.time()
 
         if food_count % 8 == 0 and not shell_active:
-            shell_x = random.randint(0 + (GRID_SIZE // 2), GRID_COLS - 1 - (GRID_SIZE // 2))
-            shell_y = random.randint(0 + (GRID_SIZE // 2), GRID_ROWS - 1 - (GRID_SIZE // 2))
-            shell = {'x': shell_x, 'y': shell_y}
+            shell = get_safe_position(2)  
             shell_active = True
-            shell_timer = time.time() 
-
+            shell_timer = time.time()
     else:
         snake.pop()
+
     check_obstacle_collision()
 
+    # Shell collision check
     if shell:
-        head_x = head['x'] * GRID_SIZE + GRID_SIZE / 2  
+        head_x = head['x'] * GRID_SIZE + GRID_SIZE / 2
         head_y = head['y'] * GRID_SIZE + GRID_SIZE / 2
         shell_x = shell['x'] * GRID_SIZE + GRID_SIZE / 2
         shell_y = shell['y'] * GRID_SIZE + GRID_SIZE / 2
         distance = ((head_x - shell_x) ** 2 + (head_y - shell_y) ** 2) ** 0.5
-        if distance <= GRID_SIZE:  
-            snake = [snake[0]]  # Shrink snake to a single segment
-            shell_active = False  
-            shell = None 
-            food_count = 0  
+        if distance <= GRID_SIZE:
+            snake = [snake[0]]
+            shell_active = False
+            shell = None
+            food_count = 0
             score += 5
-            shell_timer = None 
+            shell_timer = None
 
-    if shell and time.time() - shell_timer > 10: #  # Check if the shell has expired 
-        shell_active = False 
-        shell = None 
+    # Shell timer check
+    if shell and time.time() - shell_timer > 10:
+        shell_active = False
+        shell = None
 
-    # Check if the snake eats the poisonous food
+    # Poisonous food collision
     if poisonous_food and head['x'] == poisonous_food['x'] and head['y'] == poisonous_food['y']:
         game_over = True
         print(f"Game Over! Final Score: {score}")
         poisonous_food_eaten = True
-    
+
+    # Portal teleportation
     if portal_running:
         if head['x'] == first_portal['x'] and head['y'] == first_portal['y']:
-            snake[0] = second_portal  # Teleport snake head to portal B
+            snake[0] = second_portal.copy()
         elif head['x'] == second_portal['x'] and head['y'] == second_portal['y']:
-            snake[0] = first_portal  # Teleport snake head to portal A
-  
-    if portal_running and time.time() - timer_for_portal > 10: #teleportation portal will be available for 10 sec
+            snake[0] = first_portal.copy()
+
+    # Portal timer check
+    if portal_running and time.time() - timer_for_portal > 10:
         first_portal = None
         second_portal = None
         portal_running = False
