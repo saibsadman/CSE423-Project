@@ -353,6 +353,7 @@ def display():
         else:
             render_text(WINDOW_WIDTH // 3, WINDOW_HEIGHT // 2, "Game Over!", SCORE_COLOR)
             render_text(WINDOW_WIDTH // 3, WINDOW_HEIGHT // 2 - 40, "Press R to Restart", SCORE_COLOR)
+            render_text(WINDOW_WIDTH // 3, WINDOW_HEIGHT // 2 - 80, f"Score: {score}", SCORE_COLOR)
     glutSwapBuffers()
 
 # Move the snake
